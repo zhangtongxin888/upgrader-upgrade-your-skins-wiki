@@ -1,0 +1,5 @@
+User-Agent: *
+Allow: /
+
+Host: https://upgraderupgradeyourskins.wiki
+Sitemap: https://upgraderupgradeyourskins.wiki/sitemap.xml

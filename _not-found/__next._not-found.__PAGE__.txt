@@ -1,0 +1,6 @@
+1:"$Sreact.fragment"
+2:I[27290,["/_next/static/chunks/0fwyjt_5td62i.js","/_next/static/chunks/0r-vlp5a..9xy.js"],""]
+3:I[84372,["/_next/static/chunks/0fwyjt_5td62i.js","/_next/static/chunks/0r-vlp5a..9xy.js"],"OutletBoundary"]
+4:"$Sreact.suspense"
+0:{"rsc":["$","$1","c",{"children":[["$","main",null,{"id":"main-content","className":"not-found","children":[["$","div",null,{"className":"not-found-mark","children":"404"}],["$","p",null,{"className":"eyebrow","children":[["$","span",null,{"aria-hidden":"true"}]," ROUTE NOT FOUND"]}],["$","h1",null,{"children":"This upgrade path does not exist."}],["$","p",null,{"children":"Return to the source-checked beginner route and continue from there."}],["$","$L2",null,{"className":"button button-primary","href":"/","children":["Back to the guide ",["$","span",null,{"aria-hidden":"true","children":"→"}]]}]]}],null,["$","$L3",null,{"children":["$","$4",null,{"name":"Next.MetadataOutlet","children":"$@5"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"niDrIeTubA7qCvw_mMoVQ"}
+5:null
