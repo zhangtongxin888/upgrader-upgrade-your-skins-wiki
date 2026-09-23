@@ -1,0 +1,10 @@
+{
+  "name": "upgraderupgradeyourskins-wiki",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/validate-static.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "npm test && npm run build"
+  }
+}
