@@ -1,99 +1,159 @@
-// adsterra-artifact-runtime
-import { adsterraConfig } from "./config.js";
+/* Adsterra static runtime for plain HTML exports.
+   Load with <script src="/adsterra/runtime.js" defer></script>
+   after <script type="application/json" id="adsterra-config">.
+   This file is a classic script. It has no module statement, because a
+   deferred classic script tag does not run one and the page then makes
+   zero ad requests.
+   Local change (foreverago-wiki, theescapists3wiki): banners are queued until the previous
+   banner script loads (upstream waited only 50 ms, so atOptions raced), and
+   the top banner picks the widest variant allowed by the screen (upstream
+   always ended on the 320x50 entry). */
+(function () {
+  "use strict";
 
-const ADSTERRA_RUNTIME_MARKER = "adsterra-artifact-runtime";
-const CLEAN_ROUTE_SEGMENTS = new Set(["about", "accessibility", "advertising-policy", "affiliate-disclosure", "contact", "cookie-policy", "cookies", "disclosure", "dmca", "editorial-policy", "legal", "privacy", "sources", "terms"]);
-document.documentElement.dataset.adsterraRuntime = ADSTERRA_RUNTIME_MARKER;
-void Object.values(adsterraConfig);
-
-function cleanRoute() {
-  return window.location.pathname
-    .split("/")
-    .filter(Boolean)
-    .some((segment) => CLEAN_ROUTE_SEGMENTS.has(segment));
-}
-
-function normalizeUrl(url) {
-  if (!url) return undefined;
-  return url.startsWith("//") ? `https:${url}` : url;
-}
-
-function addScript(id, url, parent = document.body) {
-  const source = normalizeUrl(url);
-  if (!source || document.getElementById(id)) return;
-  const script = document.createElement("script");
-  script.id = id;
-  script.async = true;
-  script.dataset.cfasync = "false";
-  script.src = source;
-  parent.appendChild(script);
-}
-
-function bannerConfig(size) {
-  const suffix = size.replace("x", "x");
-  const names = {
-    "300x250": ["adsterraBanner300x250Key", "adsterraBanner300x250ScriptUrl", 300, 250],
-    "320x50": ["adsterraBanner320x50Key", "adsterraBanner320x50ScriptUrl", 320, 50],
-    "728x90": ["adsterraBanner728x90Key", "adsterraBanner728x90ScriptUrl", 728, 90],
-    "468x60": ["adsterraBanner468x60Key", "adsterraBanner468x60ScriptUrl", 468, 60],
-    "160x300": ["adsterraBanner160x300Key", "adsterraBanner160x300ScriptUrl", 160, 300],
-    "160x600": ["adsterraBanner160x600Key", "adsterraBanner160x600ScriptUrl", 160, 600],
+  var CLEAN = {
+    about: 1,
+    accessibility: 1,
+    "advertising-policy": 1,
+    "affiliate-disclosure": 1,
+    contact: 1,
+    "cookie-policy": 1,
+    cookies: 1,
+    disclosure: 1,
+    dmca: 1,
+    "editorial-policy": 1,
+    legal: 1,
+    privacy: 1,
+    sources: 1,
+    terms: 1
   };
-  const [keyName, scriptName, width, height] = names[suffix];
-  const key = adsterraConfig[keyName];
-  const scriptUrl = normalizeUrl(adsterraConfig[scriptName]) ||
-    (key ? `https://www.highperformanceformat.com/${key}/invoke.js` : undefined);
-  return { key, scriptUrl, width, height };
-}
 
-function mountBanner(size, className) {
-  const config = bannerConfig(size);
-  if (!config.key || !config.scriptUrl) return;
-  const shell = document.createElement("aside");
-  shell.className = className;
-  shell.setAttribute("aria-label", "Advertisement");
-  const host = document.createElement("div");
-  host.style.minHeight = `${config.height}px`;
-  host.style.maxWidth = `${config.width}px`;
-  shell.appendChild(host);
-  document.body.appendChild(shell);
-  window.atOptions = { key: config.key, format: "iframe", height: config.height, width: config.width, params: {} };
-  addScript(`adsterra-banner-${size}`, config.scriptUrl, host);
-}
-
-export function mountAdsterraNative(container) {
-  if (!container || !adsterraConfig.adsterraNative1Id || !adsterraConfig.adsterraNative1ScriptUrl) return;
-  const target = document.createElement("div");
-  target.id = adsterraConfig.adsterraNative1Id.replace(/^#/, "");
-  container.appendChild(target);
-  addScript("adsterra-native-1", adsterraConfig.adsterraNative1ScriptUrl, container);
-}
-
-function mountAdsterraRuntime() {
-  if (cleanRoute()) return;
-  const loader = document.querySelector("script[data-adsterra-runtime]");
-  if (adsterraConfig.adsterraNeedsGlobalFallback === 1) {
-    mountBanner(window.matchMedia("(min-width: 768px)").matches ? "728x90" : "320x50", "adsterra-global-fallback");
+  function cleanPath() {
+    var parts = String(window.location.pathname || "").split("/");
+    for (var i = 0; i < parts.length; i += 1) {
+      if (CLEAN[parts[i].toLowerCase()]) return true;
+    }
+    return false;
   }
-  if (adsterraConfig.adsterraEnableStickyRail) mountBanner("160x600", "adsterra-sticky-rail");
-  if (adsterraConfig.adsterraEnableSocialBar) {
-    addScript("adsterra-social-bar", adsterraConfig.adsterraSocialBarScriptUrl);
-  }
-  if (adsterraConfig.adsterraEnablePopunder && adsterraConfig.adsterraPopunderScriptUrl) {
-    const viewsKey = "roblox-site-adsterra-pageviews";
-    const nextViews = Number(sessionStorage.getItem(viewsKey) || "0") + 1;
-    sessionStorage.setItem(viewsKey, String(nextViews));
-    if (nextViews >= adsterraConfig.adsterraPopunderMinPageViews) {
-      window.setTimeout(
-        () => addScript("adsterra-popunder", adsterraConfig.adsterraPopunderScriptUrl),
-        adsterraConfig.adsterraPopunderDelayMs,
-      );
+
+  function readConfig() {
+    var node = document.getElementById("adsterra-config");
+    if (!node) return null;
+    try {
+      return JSON.parse(node.textContent || "");
+    } catch (error) {
+      return null;
     }
   }
-}
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", mountAdsterraRuntime, { once: true });
-} else {
-  mountAdsterraRuntime();
-}
+  function visibleCount() {
+    return document.querySelectorAll("aside.ad-placement").length;
+  }
+
+  function chooseVariant(slot) {
+    var variants = slot.variants || [];
+    if (!variants.length) return slot;
+    var width = window.innerWidth || 0;
+    var selected = null;
+    var best = -1;
+    for (var i = 0; i < variants.length; i += 1) {
+      var variant = variants[i];
+      var minWidth = Number(variant.minWidth || 0);
+      /* Pick the widest variant the screen allows, whatever the list order. */
+      if (width >= minWidth && minWidth > best) {
+        selected = variant;
+        best = minWidth;
+      }
+    }
+    return selected || variants[variants.length - 1];
+  }
+
+  function mountBanner(host, slot) {
+    var chosen = chooseVariant(slot);
+    var key = chosen.key;
+    var scriptUrl = chosen.scriptUrl;
+    if (!key || !scriptUrl) return;
+    window.atOptions = {
+      key: key,
+      format: "iframe",
+      height: Number(chosen.height),
+      width: Number(chosen.width),
+      params: {}
+    };
+    var script = document.createElement("script");
+    script.async = true;
+    script.src = scriptUrl;
+    host.appendChild(script);
+    return script;
+  }
+
+  function mountNative(host, slot) {
+    if (!slot.containerId || !slot.scriptUrl) return;
+    var container = document.createElement("div");
+    container.id = slot.containerId;
+    host.appendChild(container);
+    var script = document.createElement("script");
+    script.async = true;
+    script.setAttribute("data-cfasync", "false");
+    script.src = slot.scriptUrl;
+    host.appendChild(script);
+  }
+
+  function mountSlots(slots) {
+    var queue = Promise.resolve();
+    slots.forEach(function (slot) {
+      queue = queue.then(function () {
+        return new Promise(function (resolve) {
+          var host = document.querySelector('[data-ad-host="' + slot.id + '"]');
+          if (!host) {
+            resolve();
+            return;
+          }
+          if (slot.format === "native") {
+            mountNative(host, slot);
+            window.setTimeout(resolve, 50);
+            return;
+          }
+          /* Banner snippets read the global atOptions when their script runs,
+             so the next banner must wait until this one has loaded. */
+          var script = mountBanner(host, slot);
+          if (!script) {
+            resolve();
+            return;
+          }
+          var done = false;
+          var finish = function () {
+            if (done) return;
+            done = true;
+            window.setTimeout(resolve, 300);
+          };
+          script.addEventListener("load", finish);
+          script.addEventListener("error", finish);
+          window.setTimeout(finish, 5000);
+        });
+      });
+    });
+  }
+
+  function addScript(id, url) {
+    if (!url || document.getElementById(id)) return;
+    var script = document.createElement("script");
+    script.id = id;
+    script.async = true;
+    script.src = url;
+    document.body.appendChild(script);
+  }
+
+  var config = readConfig();
+  if (!config || config.adNetwork !== "adsterra" || config.status !== "ready") return;
+  if (config.cleanPage || cleanPath()) return;
+  var slots = Array.isArray(config.slots) ? config.slots.slice(0, 3) : [];
+  if (visibleCount() > 3) return;
+  mountSlots(slots);
+  if (config.enablePopunder && config.popunderScriptUrl) {
+    addScript("adsterra-popunder", config.popunderScriptUrl);
+  }
+  if (config.enableSocialBar && config.socialBarScriptUrl && visibleCount() < 3) {
+    addScript("adsterra-social-bar", config.socialBarScriptUrl);
+  }
+})();
