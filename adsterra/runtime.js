@@ -140,8 +140,54 @@
     var script = document.createElement("script");
     script.id = id;
     script.async = true;
+    script.setAttribute("data-cfasync", "false");
     script.src = url;
     document.body.appendChild(script);
+  }
+
+  function popunderContentPath() {
+    var path = String(window.location.pathname || "").replace(/\/+$/, "") || "/";
+    return path === "/" || path === "/index.html" || path === "/codes" || path === "/codes/index.html";
+  }
+
+  function startPopunder(config) {
+    if (!config.enablePopunder || !config.popunderScriptUrl || !popunderContentPath()) return;
+    if (window.__upgraderPopunderGateStarted) return;
+    window.__upgraderPopunderGateStarted = true;
+    try {
+      var viewsKey = "upgrader-adsterra-pageviews";
+      var previousViews = Number(window.sessionStorage.getItem(viewsKey) || "0");
+      if (!Number.isSafeInteger(previousViews) || previousViews < 0) return;
+      var views = previousViews + 1;
+      window.sessionStorage.setItem(viewsKey, String(views));
+      if (views < Math.max(2, Number(config.popunderMinPageViews) || 2)) return;
+      var storage = window.localStorage;
+      var locks = window.navigator.locks;
+      if (!locks) return;
+      var pathAtStart = window.location.pathname;
+      window.setTimeout(function () {
+        // Serialize reservations between this origin's tabs. A failed storage
+        // operation or lock leaves the Pop script unloaded.
+        Promise.resolve().then(function () {
+          return locks.request("upgrader-adsterra-popunder-start", function () {
+            if (window.location.pathname !== pathAtStart || !popunderContentPath() || document.getElementById("adsterra-popunder")) return false;
+            var key = "upgrader-adsterra-popunder-last-start";
+            var now = Date.now();
+            if (!Number.isFinite(now) || now <= 0) return false;
+            var stored = storage.getItem(key);
+            if (stored !== null) {
+              var last = Number(stored);
+              if (!stored.trim() || !Number.isFinite(last) || last <= 0 || now - last < 86400000) return false;
+            }
+            // Reserve before mounting; errors retain the 24h reservation.
+            storage.setItem(key, String(now));
+            if (storage.getItem(key) !== String(now)) return false;
+            addScript("adsterra-popunder", config.popunderScriptUrl);
+            return true;
+          });
+        }).catch(function () { /* storage/lock failure: no Pop */ });
+      }, Math.max(30000, Number(config.popunderDelayMs) || 30000));
+    } catch (error) { /* disabled storage: no Pop */ }
   }
 
   var config = readConfig();
@@ -150,9 +196,7 @@
   var slots = Array.isArray(config.slots) ? config.slots.slice(0, 3) : [];
   if (visibleCount() > 3) return;
   mountSlots(slots);
-  if (config.enablePopunder && config.popunderScriptUrl) {
-    addScript("adsterra-popunder", config.popunderScriptUrl);
-  }
+  startPopunder(config);
   if (config.enableSocialBar && config.socialBarScriptUrl && visibleCount() < 3) {
     addScript("adsterra-social-bar", config.socialBarScriptUrl);
   }
