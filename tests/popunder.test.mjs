@@ -8,16 +8,8 @@ function storage(values = new Map()) {
   return { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
 }
 function visitor() {
-  let time = 1791849600000;
-  let pending = Promise.resolve();
-  const local = storage();
   const session = storage();
-  const locks = { request: (_name, callback) => {
-    const result = pending.then(callback);
-    pending = result.then(() => undefined, () => undefined);
-    return result;
-  } };
-  return { local, session, locks, now: () => time, advance: ms => { time += ms; } };
+  return { session };
 }
 function page(v, path, overrides = {}) {
   const nodes = new Map();
@@ -27,8 +19,7 @@ function page(v, path, overrides = {}) {
   nodes.set("adsterra-config", { textContent: JSON.stringify(config) });
   const window = {
     location: { pathname: path }, innerWidth: 1024,
-    localStorage: overrides.local ?? v.local, sessionStorage: v.session,
-    navigator: { locks: "locks" in overrides ? overrides.locks : v.locks },
+    sessionStorage: overrides.session ?? v.session,
     setTimeout: (callback, delay) => { timers.push({ callback, delay }); }
   };
   const document = {
@@ -38,7 +29,8 @@ function page(v, path, overrides = {}) {
     createElement: tag => ({ tag, setAttribute(name, value) { this[name] = value; } }),
     body: { appendChild(node) { nodes.set(node.id, node); loaded.push(node); } }
   };
-  const context = vm.createContext({ window, document, Date: { now: v.now } });
+  Object.defineProperty(window, "localStorage", { get() { throw Error("Removed daily cap must not access localStorage"); } });
+  const context = vm.createContext({ window, document });
   function run() { vm.runInContext(runtime, context); }
   run();
   return { loaded, timers, window, run, flush: async () => {
@@ -59,17 +51,15 @@ test("requires two page views and 30 seconds; duplicate runtime execution does n
   assert.equal(second.loaded[0]["data-cfasync"], "false");
 });
 
-test("tabs/refreshes share the 24h cap, including the exact cooldown boundary", async () => {
+test("refreshes and tabs can load again under provider default frequency, once per document", async () => {
   const v = visitor(); page(v, "/");
   const a = page(v, "/codes/"), b = page(v, "/codes/");
   await Promise.all([a.flush(), b.flush()]);
-  assert.equal(a.loaded.length + b.loaded.length, 1);
-  v.advance(86399999);
+  assert.equal(a.loaded.length + b.loaded.length, 2);
+  a.run(); await a.flush();
+  assert.equal(a.loaded.length, 1);
   const refresh = page(v, "/"); await refresh.flush();
-  assert.equal(refresh.loaded.length, 0);
-  v.advance(1);
-  const nextDay = page(v, "/"); await nextDay.flush();
-  assert.equal(nextDay.loaded.length, 1);
+  assert.equal(refresh.loaded.length, 1);
 });
 
 test("legal/trust/404/unknown pages and disabled settings do not start Pop", async () => {
@@ -80,13 +70,11 @@ test("legal/trust/404/unknown pages and disabled settings do not start Pop", asy
   const p = page(v, "/codes/", { config: { enablePopunder: false } }); await p.flush(); assert.equal(p.loaded.length, 0);
 });
 
-test("storage failures, missing locks, corrupt timestamps and route changes stay closed", async () => {
+test("session storage failures, corrupt view counts and route changes stay closed", async () => {
   const bad = { getItem() { throw Error("disabled"); }, setItem() { throw Error("disabled"); } };
-  for (const overrides of [{ local: bad }, { locks: undefined }]) {
-    const v = visitor(); page(v, "/"); const p = page(v, "/codes/", overrides); await p.flush(); assert.equal(p.loaded.length, 0);
-  }
-  for (const value of ["", "invalid", "Infinity", "0"]) {
-    const v = visitor(); v.local.setItem("upgrader-adsterra-popunder-last-start", value); page(v, "/");
+  const blocked = page(visitor(), "/codes/", { session: bad }); await blocked.flush(); assert.equal(blocked.loaded.length, 0);
+  for (const value of ["invalid", "Infinity", "-1"]) {
+    const v = visitor(); v.session.setItem("upgrader-adsterra-pageviews", value);
     const p = page(v, "/codes/"); await p.flush(); assert.equal(p.loaded.length, 0);
   }
   const v = visitor(); page(v, "/"); const p = page(v, "/codes/"); p.window.location.pathname = "/sources/";

@@ -161,31 +161,12 @@
       var views = previousViews + 1;
       window.sessionStorage.setItem(viewsKey, String(views));
       if (views < Math.max(2, Number(config.popunderMinPageViews) || 2)) return;
-      var storage = window.localStorage;
-      var locks = window.navigator.locks;
-      if (!locks) return;
       var pathAtStart = window.location.pathname;
       window.setTimeout(function () {
-        // Serialize reservations between this origin's tabs. A failed storage
-        // operation or lock leaves the Pop script unloaded.
-        Promise.resolve().then(function () {
-          return locks.request("upgrader-adsterra-popunder-start", function () {
-            if (window.location.pathname !== pathAtStart || !popunderContentPath() || document.getElementById("adsterra-popunder")) return false;
-            var key = "upgrader-adsterra-popunder-last-start";
-            var now = Date.now();
-            if (!Number.isFinite(now) || now <= 0) return false;
-            var stored = storage.getItem(key);
-            if (stored !== null) {
-              var last = Number(stored);
-              if (!stored.trim() || !Number.isFinite(last) || last <= 0 || now - last < 86400000) return false;
-            }
-            // Reserve before mounting; errors retain the 24h reservation.
-            storage.setItem(key, String(now));
-            if (storage.getItem(key) !== String(now)) return false;
-            addScript("adsterra-popunder", config.popunderScriptUrl);
-            return true;
-          });
-        }).catch(function () { /* storage/lock failure: no Pop */ });
+        if (window.location.pathname !== pathAtStart || !popunderContentPath() || document.getElementById("adsterra-popunder")) return;
+        // Adsterra controls popup frequency. This only prevents duplicate
+        // script mounts in the same document and preserves the launch delay.
+        addScript("adsterra-popunder", config.popunderScriptUrl);
       }, Math.max(30000, Number(config.popunderDelayMs) || 30000));
     } catch (error) { /* disabled storage: no Pop */ }
   }
