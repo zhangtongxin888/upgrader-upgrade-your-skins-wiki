@@ -77,3 +77,13 @@ test("storage and old pageview records are no longer needed to load Pop", () => 
     const p = page(v, "/codes/"); assert.equal(p.loaded.length, 1);
   }
 });
+
+test("active content pages request the versioned immediate runtime", async () => {
+  for (const rel of ['../index.html', '../codes/index.html']) {
+    const html = await readFile(new URL(rel, import.meta.url), 'utf8');
+    assert.equal(html.split('src="/adsterra/runtime.js?v=20261013-pop-immediate"').length - 1, 1);
+    assert.equal(html.includes('src="/adsterra/runtime.js"'), false);
+  }
+  const notFound = await readFile(new URL('../404.html', import.meta.url), 'utf8');
+  assert.equal(notFound.includes('/adsterra/runtime.js'), false);
+});
