@@ -154,21 +154,9 @@
     if (!config.enablePopunder || !config.popunderScriptUrl || !popunderContentPath()) return;
     if (window.__upgraderPopunderGateStarted) return;
     window.__upgraderPopunderGateStarted = true;
-    try {
-      var viewsKey = "upgrader-adsterra-pageviews";
-      var previousViews = Number(window.sessionStorage.getItem(viewsKey) || "0");
-      if (!Number.isSafeInteger(previousViews) || previousViews < 0) return;
-      var views = previousViews + 1;
-      window.sessionStorage.setItem(viewsKey, String(views));
-      if (views < Math.max(2, Number(config.popunderMinPageViews) || 2)) return;
-      var pathAtStart = window.location.pathname;
-      window.setTimeout(function () {
-        if (window.location.pathname !== pathAtStart || !popunderContentPath() || document.getElementById("adsterra-popunder")) return;
-        // Adsterra controls popup frequency. This only prevents duplicate
-        // script mounts in the same document and preserves the launch delay.
-        addScript("adsterra-popunder", config.popunderScriptUrl);
-      }, Math.max(30000, Number(config.popunderDelayMs) || 30000));
-    } catch (error) { /* disabled storage: no Pop */ }
+    // Load on the first verified content page. The provider handles actual
+    // user-click activation and frequency; this site never forces a popup.
+    addScript("adsterra-popunder", config.popunderScriptUrl);
   }
 
   var config = readConfig();

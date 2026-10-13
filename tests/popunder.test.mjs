@@ -39,14 +39,13 @@ function page(v, path, overrides = {}) {
   } };
 }
 
-test("requires two page views and 30 seconds; duplicate runtime execution does not count twice", async () => {
+test("first content page starts immediately, without timers, once per document", () => {
   const v = visitor(), first = page(v, "/");
   first.run();
   assert.equal(first.timers.length, 0);
+  assert.equal(first.loaded.length, 1);
   const second = page(v, "/codes/");
-  assert.equal(second.timers[0].delay, 30000);
-  assert.equal(second.loaded.length, 0);
-  await second.flush();
+  assert.equal(second.timers.length, 0);
   assert.equal(second.loaded.length, 1);
   assert.equal(second.loaded[0]["data-cfasync"], "false");
 });
@@ -70,13 +69,11 @@ test("legal/trust/404/unknown pages and disabled settings do not start Pop", asy
   const p = page(v, "/codes/", { config: { enablePopunder: false } }); await p.flush(); assert.equal(p.loaded.length, 0);
 });
 
-test("session storage failures, corrupt view counts and route changes stay closed", async () => {
+test("storage and old pageview records are no longer needed to load Pop", () => {
   const bad = { getItem() { throw Error("disabled"); }, setItem() { throw Error("disabled"); } };
-  const blocked = page(visitor(), "/codes/", { session: bad }); await blocked.flush(); assert.equal(blocked.loaded.length, 0);
+  const blocked = page(visitor(), "/codes/", { session: bad }); assert.equal(blocked.loaded.length, 1);
   for (const value of ["invalid", "Infinity", "-1"]) {
     const v = visitor(); v.session.setItem("upgrader-adsterra-pageviews", value);
-    const p = page(v, "/codes/"); await p.flush(); assert.equal(p.loaded.length, 0);
+    const p = page(v, "/codes/"); assert.equal(p.loaded.length, 1);
   }
-  const v = visitor(); page(v, "/"); const p = page(v, "/codes/"); p.window.location.pathname = "/sources/";
-  await p.flush(); assert.equal(p.loaded.length, 0);
 });
