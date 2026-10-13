@@ -44,7 +44,7 @@ export async function validateStaticSite() {
     assert.match(html, /Upgrader/);
     assert.match(html, /1,500/);
     assert.match(html, /1,000/);
-    assert.match(html, /2026-10-06/);
+    assert.match(html, /2026-10-13/);
     validateJsonLd(route, html);
     if (route === "/codes/") {
       assert.match(html, /UPGRADER Roblox codes \(October 2026\)/);
