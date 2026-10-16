@@ -1,7 +1,7 @@
 {
   "status": "adsterra-ready",
   "adNetwork": "adsterra",
-  "adNetworkSource": "default",
+  "adNetworkSource": "handoff-banner-native",
   "releaseBlocking": false,
   "browserAdRequestCheck": "required-after-deploy",
   "runtime": "classic-defer",
@@ -10,30 +10,29 @@
   "enablePopunder": false,
   "enableSocialBar": false,
   "adsTxt": "omitted-no-platform-line",
-  "cspHosts": [
-    "https://www.highperformanceformat.com",
-    "https://*.highperformanceformat.com",
-    "https://*.effectivecpmnetwork.com"
-  ],
+  "csp": "absent",
   "pages": {
     "injected": [
       "codes/index.html",
       "index.html"
     ],
     "legalSkipped": [
-      "404.html"
+      "404.html",
+      "sources/index.html"
     ],
     "visibleSlotCounts": {
       "404.html": 0,
-      "codes/index.html": 1,
-      "index.html": 1
+      "codes/index.html": 3,
+      "index.html": 3,
+      "sources/index.html": 0
     }
   },
   "trackedFiles": [
     "404.html",
     "codes/index.html",
     "index.html",
-    "_headers",
+    "sources/index.html",
+    "adsterra/config.js",
     "adsterra/runtime.js"
   ]
 }
