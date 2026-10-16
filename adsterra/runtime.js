@@ -1,13 +1,14 @@
-/* Adsterra static runtime for plain HTML exports.
+/* Adsterra static runtime for GitHub Pages.
    Load with <script src="/adsterra/runtime.js" defer></script>
    after <script type="application/json" id="adsterra-config">.
    This file is a classic script. It has no module statement, because a
    deferred classic script tag does not run one and the page then makes
    zero ad requests.
-   Local change (foreverago-wiki, theescapists3wiki): banners are queued until the previous
-   banner script loads (upstream waited only 50 ms, so atOptions raced), and
-   the top banner picks the widest variant allowed by the screen (upstream
-   always ended on the 320x50 entry). */
+   Banner snippets share the global atOptions, so each banner script is
+   appended only after the previous one loads. document.write from those
+   scripts is applied inside the slot and rewritten <script> tags are
+   inserted as real elements so follow-up invoke scripts still request.
+   Popunder and Social Bar are not loaded. */
 (function () {
   "use strict";
 
@@ -20,6 +21,8 @@
     "cookie-policy": 1,
     cookies: 1,
     disclosure: 1,
+    "404": 1,
+    "404.html": 1,
     dmca: 1,
     "editorial-policy": 1,
     legal: 1,
@@ -59,7 +62,6 @@
     for (var i = 0; i < variants.length; i += 1) {
       var variant = variants[i];
       var minWidth = Number(variant.minWidth || 0);
-      /* Pick the widest variant the screen allows, whatever the list order. */
       if (width >= minWidth && minWidth > best) {
         selected = variant;
         best = minWidth;
@@ -68,11 +70,53 @@
     return selected || variants[variants.length - 1];
   }
 
-  function mountBanner(host, slot) {
+  function injectWritten(host, html) {
+    var text = String(html || "");
+    var re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+    var match;
+    while ((match = re.exec(text))) {
+      var script = document.createElement("script");
+      var attrs = match[1] || "";
+      var src = attrs.match(/\bsrc\s*=\s*["']([^"']+)["']/i);
+      if (src) script.src = src[1];
+      script.async = /\basync\b/i.test(attrs);
+      script.setAttribute("data-cfasync", "false");
+      if (match[2]) script.text = match[2];
+      host.appendChild(script);
+    }
+    re.lastIndex = 0;
+    var rest = text.replace(re, "");
+    if (rest && host.insertAdjacentHTML) {
+      try {
+        host.insertAdjacentHTML("beforeend", rest);
+      } catch (error) { /* ignore malformed creative markup */ }
+    }
+  }
+
+  function installWriter(getHost) {
+    var previousWrite = document.write;
+    var previousLine = document.writeln;
+    document.write = function () {
+      var host = getHost();
+      if (!host) return;
+      injectWritten(host, Array.prototype.join.call(arguments, ""));
+    };
+    document.writeln = function () {
+      var host = getHost();
+      if (!host) return;
+      injectWritten(host, Array.prototype.join.call(arguments, "") + "\n");
+    };
+    return function restore() {
+      document.write = previousWrite;
+      document.writeln = previousLine;
+    };
+  }
+
+  function createBannerScript(slot) {
     var chosen = chooseVariant(slot);
     var key = chosen.key;
     var scriptUrl = chosen.scriptUrl;
-    if (!key || !scriptUrl) return;
+    if (!key || !scriptUrl) return null;
     window.atOptions = {
       key: key,
       format: "iframe",
@@ -81,14 +125,14 @@
       params: {}
     };
     var script = document.createElement("script");
-    script.async = true;
+    script.async = false;
+    script.setAttribute("data-cfasync", "false");
     script.src = scriptUrl;
-    host.appendChild(script);
     return script;
   }
 
-  function mountNative(host, slot) {
-    if (!slot.containerId || !slot.scriptUrl) return;
+  function createNativeScript(host, slot) {
+    if (!slot.containerId || !slot.scriptUrl) return null;
     var container = document.createElement("div");
     container.id = slot.containerId;
     host.appendChild(container);
@@ -96,10 +140,12 @@
     script.async = true;
     script.setAttribute("data-cfasync", "false");
     script.src = slot.scriptUrl;
-    host.appendChild(script);
+    return script;
   }
 
   function mountSlots(slots) {
+    var currentHost = null;
+    var restore = installWriter(function () { return currentHost; });
     var queue = Promise.resolve();
     slots.forEach(function (slot) {
       queue = queue.then(function () {
@@ -109,14 +155,8 @@
             resolve();
             return;
           }
-          if (slot.format === "native") {
-            mountNative(host, slot);
-            window.setTimeout(resolve, 50);
-            return;
-          }
-          /* Banner snippets read the global atOptions when their script runs,
-             so the next banner must wait until this one has loaded. */
-          var script = mountBanner(host, slot);
+          currentHost = host;
+          var script = slot.format === "native" ? createNativeScript(host, slot) : createBannerScript(slot);
           if (!script) {
             resolve();
             return;
@@ -125,48 +165,22 @@
           var finish = function () {
             if (done) return;
             done = true;
-            window.setTimeout(resolve, 300);
+            window.setTimeout(resolve, slot.format === "native" ? 50 : 300);
           };
           script.addEventListener("load", finish);
           script.addEventListener("error", finish);
           window.setTimeout(finish, 5000);
+          host.appendChild(script);
         });
       });
     });
-  }
-
-  function addScript(id, url) {
-    if (!url || document.getElementById(id)) return;
-    var script = document.createElement("script");
-    script.id = id;
-    script.async = true;
-    script.setAttribute("data-cfasync", "false");
-    script.src = url;
-    document.body.appendChild(script);
-  }
-
-  function popunderContentPath() {
-    var path = String(window.location.pathname || "").replace(/\/+$/, "") || "/";
-    return path === "/" || path === "/index.html" || path === "/codes" || path === "/codes/index.html";
-  }
-
-  function startPopunder(config) {
-    if (!config.enablePopunder || !config.popunderScriptUrl || !popunderContentPath()) return;
-    if (window.__upgraderPopunderGateStarted) return;
-    window.__upgraderPopunderGateStarted = true;
-    // Load on the first verified content page. The provider handles actual
-    // user-click activation and frequency; this site never forces a popup.
-    addScript("adsterra-popunder", config.popunderScriptUrl);
+    queue.then(restore, restore);
   }
 
   var config = readConfig();
   if (!config || config.adNetwork !== "adsterra" || config.status !== "ready") return;
   if (config.cleanPage || cleanPath()) return;
   var slots = Array.isArray(config.slots) ? config.slots.slice(0, 3) : [];
-  if (visibleCount() > 3) return;
+  if (!slots.length || visibleCount() > 3) return;
   mountSlots(slots);
-  startPopunder(config);
-  if (config.enableSocialBar && config.socialBarScriptUrl && visibleCount() < 3) {
-    addScript("adsterra-social-bar", config.socialBarScriptUrl);
-  }
 })();
