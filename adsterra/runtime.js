@@ -1,14 +1,16 @@
-/* Adsterra static runtime for GitHub Pages.
+/* Adsterra static runtime for plain HTML exports.
    Load with <script src="/adsterra/runtime.js" defer></script>
    after <script type="application/json" id="adsterra-config">.
    This file is a classic script. It has no module statement, because a
    deferred classic script tag does not run one and the page then makes
    zero ad requests.
-   Banner snippets share the global atOptions, so each banner script is
-   appended only after the previous one loads. document.write from those
-   scripts is applied inside the slot and rewritten <script> tags are
-   inserted as real elements so follow-up invoke scripts still request.
-   Popunder and Social Bar are not loaded. */
+   Local change (foreverago-wiki, theescapists3wiki): banners are queued until the previous
+   banner script loads (upstream waited only 50 ms, so atOptions raced), and
+   the top banner picks the widest variant allowed by the screen (upstream
+   always ended on the 320x50 entry).
+   Local change (2026-10-23, shared by every Adsterra Popunder site): Popunder
+   capped at 3 per visitor per local calendar day (localStorage). A page view
+   counts once, on its first click after the Popunder script has loaded. */
 (function () {
   "use strict";
 
@@ -21,8 +23,6 @@
     "cookie-policy": 1,
     cookies: 1,
     disclosure: 1,
-    "404": 1,
-    "404.html": 1,
     dmca: 1,
     "editorial-policy": 1,
     legal: 1,
@@ -62,6 +62,7 @@
     for (var i = 0; i < variants.length; i += 1) {
       var variant = variants[i];
       var minWidth = Number(variant.minWidth || 0);
+      /* Pick the widest variant the screen allows, whatever the list order. */
       if (width >= minWidth && minWidth > best) {
         selected = variant;
         best = minWidth;
@@ -70,53 +71,11 @@
     return selected || variants[variants.length - 1];
   }
 
-  function injectWritten(host, html) {
-    var text = String(html || "");
-    var re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
-    var match;
-    while ((match = re.exec(text))) {
-      var script = document.createElement("script");
-      var attrs = match[1] || "";
-      var src = attrs.match(/\bsrc\s*=\s*["']([^"']+)["']/i);
-      if (src) script.src = src[1];
-      script.async = /\basync\b/i.test(attrs);
-      script.setAttribute("data-cfasync", "false");
-      if (match[2]) script.text = match[2];
-      host.appendChild(script);
-    }
-    re.lastIndex = 0;
-    var rest = text.replace(re, "");
-    if (rest && host.insertAdjacentHTML) {
-      try {
-        host.insertAdjacentHTML("beforeend", rest);
-      } catch (error) { /* ignore malformed creative markup */ }
-    }
-  }
-
-  function installWriter(getHost) {
-    var previousWrite = document.write;
-    var previousLine = document.writeln;
-    document.write = function () {
-      var host = getHost();
-      if (!host) return;
-      injectWritten(host, Array.prototype.join.call(arguments, ""));
-    };
-    document.writeln = function () {
-      var host = getHost();
-      if (!host) return;
-      injectWritten(host, Array.prototype.join.call(arguments, "") + "\n");
-    };
-    return function restore() {
-      document.write = previousWrite;
-      document.writeln = previousLine;
-    };
-  }
-
-  function createBannerScript(slot) {
+  function mountBanner(host, slot) {
     var chosen = chooseVariant(slot);
     var key = chosen.key;
     var scriptUrl = chosen.scriptUrl;
-    if (!key || !scriptUrl) return null;
+    if (!key || !scriptUrl) return;
     window.atOptions = {
       key: key,
       format: "iframe",
@@ -125,14 +84,14 @@
       params: {}
     };
     var script = document.createElement("script");
-    script.async = false;
-    script.setAttribute("data-cfasync", "false");
+    script.async = true;
     script.src = scriptUrl;
+    host.appendChild(script);
     return script;
   }
 
-  function createNativeScript(host, slot) {
-    if (!slot.containerId || !slot.scriptUrl) return null;
+  function mountNative(host, slot) {
+    if (!slot.containerId || !slot.scriptUrl) return;
     var container = document.createElement("div");
     container.id = slot.containerId;
     host.appendChild(container);
@@ -140,12 +99,10 @@
     script.async = true;
     script.setAttribute("data-cfasync", "false");
     script.src = slot.scriptUrl;
-    return script;
+    host.appendChild(script);
   }
 
   function mountSlots(slots) {
-    var currentHost = null;
-    var restore = installWriter(function () { return currentHost; });
     var queue = Promise.resolve();
     slots.forEach(function (slot) {
       queue = queue.then(function () {
@@ -155,8 +112,14 @@
             resolve();
             return;
           }
-          currentHost = host;
-          var script = slot.format === "native" ? createNativeScript(host, slot) : createBannerScript(slot);
+          if (slot.format === "native") {
+            mountNative(host, slot);
+            window.setTimeout(resolve, 50);
+            return;
+          }
+          /* Banner snippets read the global atOptions when their script runs,
+             so the next banner must wait until this one has loaded. */
+          var script = mountBanner(host, slot);
           if (!script) {
             resolve();
             return;
@@ -165,22 +128,83 @@
           var finish = function () {
             if (done) return;
             done = true;
-            window.setTimeout(resolve, slot.format === "native" ? 50 : 300);
+            window.setTimeout(resolve, 300);
           };
           script.addEventListener("load", finish);
           script.addEventListener("error", finish);
           window.setTimeout(finish, 5000);
-          host.appendChild(script);
         });
       });
     });
-    queue.then(restore, restore);
+  }
+
+  function addScript(id, url) {
+    if (!url || document.getElementById(id)) return;
+    var script = document.createElement("script");
+    script.id = id;
+    script.async = true;
+    script.setAttribute("data-cfasync", "false");
+    script.src = url;
+    document.body.appendChild(script);
+  }
+
+  /* Popunder: at most POP_DAILY_MAX per visitor per local calendar day.
+     The Adsterra Popunder script, once loaded, opens a popunder on a user
+     click, so each page view that receives a click after the script loaded
+     is counted once. When today's count has reached the cap, the script is
+     not inserted at all, so no Popunder request is made. A click before the
+     script loads, or a failed load, never counts. The count lives in
+     localStorage as {"d":"YYYY-MM-DD","n":count} and resets on a new day.
+     If storage is unavailable the script is not loaded (fail closed). */
+  var POP_KEY = "adsterra-popunder-daily";
+  var POP_DAILY_MAX = 3;
+  function today() {
+    var d = new Date();
+    var m = d.getMonth() + 1;
+    var day = d.getDate();
+    return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
+  }
+  function readPopCount() {
+    try {
+      var raw = JSON.parse(window.localStorage.getItem(POP_KEY) || "null");
+      if (raw && raw.d === today()) return Number(raw.n) || 0;
+      return 0;
+    } catch (e) {
+      return -1;
+    }
+  }
+  function countPop() {
+    try {
+      var n = readPopCount();
+      if (n < 0) n = 0;
+      window.localStorage.setItem(POP_KEY, JSON.stringify({ d: today(), n: n + 1 }));
+    } catch (e) {}
+  }
+  function addPopunder(url) {
+    if (!url || document.getElementById("adsterra-popunder")) return;
+    var used = readPopCount();
+    if (used < 0 || used >= POP_DAILY_MAX) return;
+    var script = document.createElement("script");
+    script.id = "adsterra-popunder";
+    script.async = true;
+    script.setAttribute("data-cfasync", "false");
+    script.addEventListener("load", function () {
+      document.addEventListener("click", countPop, { capture: true, once: true });
+    });
+    script.src = url;
+    document.body.appendChild(script);
   }
 
   var config = readConfig();
   if (!config || config.adNetwork !== "adsterra" || config.status !== "ready") return;
   if (config.cleanPage || cleanPath()) return;
   var slots = Array.isArray(config.slots) ? config.slots.slice(0, 3) : [];
-  if (!slots.length || visibleCount() > 3) return;
+  if (visibleCount() > 3) return;
   mountSlots(slots);
+  if (config.enablePopunder && config.popunderScriptUrl) {
+    addPopunder(config.popunderScriptUrl);
+  }
+  if (config.enableSocialBar && config.socialBarScriptUrl && visibleCount() < 3) {
+    addScript("adsterra-social-bar", config.socialBarScriptUrl);
+  }
 })();
