@@ -10,7 +10,12 @@
    always ended on the 320x50 entry).
    Local change (2026-10-23, shared by every Adsterra Popunder site): Popunder
    capped at 3 per visitor per local calendar day (localStorage). A page view
-   counts once, on its first click after the Popunder script has loaded. */
+   counts once, on its first click after the Popunder script has loaded.
+   Local change (2026-10-28, Pop + Social Bar only): banner/native slots are
+   never mounted (pages carry no ad slots). Social Bar is capped at 3 page
+   loads per visitor per local day (own localStorage key), inserted 4 s after
+   load into document.body (never a hidden container), and only on pages
+   that are not legal pages or 404 (cleanPage / CLEAN paths / 404 title). */
 (function () {
   "use strict";
 
@@ -195,16 +200,52 @@
     document.body.appendChild(script);
   }
 
+  var SB_KEY = "adsterra-socialbar-daily";
+  var SB_DAILY_MAX = 3;
+  var SB_DELAY_MS = 4000;
+  function readSbCount() {
+    try {
+      var raw = JSON.parse(window.localStorage.getItem(SB_KEY) || "null");
+      if (raw && raw.d === today()) return Number(raw.n) || 0;
+      return 0;
+    } catch (e) {
+      return -1;
+    }
+  }
+  function addSocialBar(url) {
+    if (!url || document.getElementById("adsterra-social-bar")) return;
+    var used = readSbCount();
+    if (used < 0 || used >= SB_DAILY_MAX) return;
+    window.setTimeout(function () {
+      if (document.getElementById("adsterra-social-bar")) return;
+      var n = readSbCount();
+      if (n < 0 || n >= SB_DAILY_MAX) return;
+      try {
+        window.localStorage.setItem(SB_KEY, JSON.stringify({ d: today(), n: n + 1 }));
+      } catch (e) {
+        return;
+      }
+      var script = document.createElement("script");
+      script.id = "adsterra-social-bar";
+      script.async = true;
+      script.setAttribute("data-cfasync", "false");
+      script.src = url;
+      document.body.appendChild(script);
+    }, SB_DELAY_MS);
+  }
+  function notFoundPage() {
+    var t = String(document.title || "").toLowerCase();
+    return /(^|\D)404(\D|$)|not found/.test(t);
+  }
+
   var config = readConfig();
   if (!config || config.adNetwork !== "adsterra" || config.status !== "ready") return;
-  if (config.cleanPage || cleanPath()) return;
-  var slots = Array.isArray(config.slots) ? config.slots.slice(0, 3) : [];
-  if (visibleCount() > 3) return;
-  mountSlots(slots);
+  if (config.cleanPage || cleanPath() || notFoundPage()) return;
+  /* Pop + Social Bar only: banner and native slots are not mounted. */
   if (config.enablePopunder && config.popunderScriptUrl) {
     addPopunder(config.popunderScriptUrl);
   }
-  if (config.enableSocialBar && config.socialBarScriptUrl && visibleCount() < 3) {
-    addScript("adsterra-social-bar", config.socialBarScriptUrl);
+  if (config.enableSocialBar && config.socialBarScriptUrl) {
+    addSocialBar(config.socialBarScriptUrl);
   }
 })();
