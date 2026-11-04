@@ -44,10 +44,10 @@ export async function validateStaticSite() {
     assert.match(html, /Upgrader/);
     assert.match(html, /1,500/);
     assert.match(html, /1,000/);
-    assert.match(html, /2026-10-27/);
+    assert.match(html, /2026-11-03/);
     validateJsonLd(route, html);
     if (route === "/codes/") {
-      assert.match(html, /UPGRADER Roblox codes \(October 2026\)/);
+      assert.match(html, /UPGRADER Roblox codes \(November 2026\)/);
       assert.match(html, /id="active-codes"/);
     }
     if (route === "/") {
