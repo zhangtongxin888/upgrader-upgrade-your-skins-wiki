@@ -44,15 +44,15 @@ export async function validateStaticSite() {
     assert.match(html, /Upgrader/);
     assert.match(html, /1,500/);
     assert.match(html, /1,000/);
-    assert.match(html, /2026-11-03/);
+    assert.match(html, /10 November 2026/);
     validateJsonLd(route, html);
     if (route === "/codes/") {
-      assert.match(html, /UPGRADER Roblox codes \(November 2026\)/);
+      assert.match(html, /UPGRADER Codes Check Log/);
       assert.match(html, /id="active-codes"/);
     }
     if (route === "/") {
       assert.match(html, /href="\/codes\/"/);
-      assert.match(html, /UPGRADER Roblox codes \+ beginner upgrade route/);
+      assert.match(html, /Upgrader Roblox Codes: NewGame, Upgrader/);
     }
   }
   const sm = await read("sitemap.xml");

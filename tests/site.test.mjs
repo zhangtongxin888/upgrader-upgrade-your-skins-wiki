@@ -16,7 +16,7 @@ test("codes page answers upgrader roblox codes", async () => {
 test("home links to codes hub and leads with codes intent", async () => {
   const html = await read("index.html");
   assert.match(html, /href="\/codes\/"/);
-  assert.match(html, /UPGRADER Roblox codes/);
+  assert.match(html, /UPGRADER Roblox codes/i);
 });
 
 test("every page ships strict, correctly typed JSON-LD", async () => {
